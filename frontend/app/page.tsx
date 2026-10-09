@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 type Clip = {
@@ -13,11 +13,26 @@ type Clip = {
   url: string;
 };
 
+type Candidate = {
+  id: number;
+  title: string;
+  reason: string;
+  score: number;
+  start: number;
+  end: number;
+  caption_text: string;
+};
+
+type CandidateEdit = Pick<Candidate, "title" | "start" | "end" | "caption_text">;
+
 type Job = {
   job_id: string;
   status: string;
   message: string;
   clips: Clip[];
+  candidates?: Candidate[];
+  timings?: Record<string, number>;
+  progress?: number;
   error?: string | null;
 };
 
@@ -26,8 +41,10 @@ const stages = [
   ["downloading", "Download source"],
   ["transcribing", "Transcribe audio"],
   ["finding_moments", "Find best moments"],
-  ["creating_clips", "Create verticals"],
-  ["adding_captions", "Burn captions"],
+  ["review", "Review moments"],
+  ["render_queued", "Queue render"],
+  ["aligning", "Align captions"],
+  ["rendering", "Render clips"],
 ];
 
 function formatTime(seconds: number) {
@@ -36,15 +53,110 @@ function formatTime(seconds: number) {
     .padStart(2, "0")}`;
 }
 
+function playCompletionSound(audioContext: AudioContext | null) {
+  if (!audioContext || audioContext.state !== "running") return;
+
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(660, now);
+  oscillator.frequency.setValueAtTime(880, now + 0.12);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.07, now + 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + 0.4);
+}
+
+function CandidatePreview({ src, start, end }: { src: string; start: number; end: number }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (loaded && videoRef.current) videoRef.current.currentTime = start;
+  }, [loaded, start]);
+  return (
+    <video
+      ref={videoRef}
+      controls
+      playsInline
+      preload="metadata"
+      className="aspect-video w-full bg-ink object-contain"
+      src={src}
+      onLoadedMetadata={() => {
+        setLoaded(true);
+        if (videoRef.current) videoRef.current.currentTime = start;
+      }}
+      onTimeUpdate={() => {
+        if (videoRef.current && videoRef.current.currentTime >= end) {
+          videoRef.current.pause();
+        }
+      }}
+    />
+  );
+}
+
+function TimingDetails({ timings }: { timings?: Record<string, number> }) {
+  if (!timings || Object.keys(timings).length === 0) return null;
+  return (
+    <details className="mt-4 font-body text-[10px] text-ink/45">
+      <summary className="cursor-pointer uppercase tracking-[0.12em]">Processing timings</summary>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        {Object.entries(timings).map(([name, seconds]) => (
+          <li key={name}>{name.replaceAll("_", " ")}: {seconds.toFixed(1)}s</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [attentionGameplay, setAttentionGameplay] = useState("none");
   const [job, setJob] = useState<Job | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [completionSoundEnabled, setCompletionSoundEnabled] = useState(true);
+  const [emailNotificationsAvailable, setEmailNotificationsAvailable] = useState(false);
+  const [notificationEmail, setNotificationEmail] = useState("");
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<number[]>([]);
+  const [candidateEdits, setCandidateEdits] = useState<Record<number, CandidateEdit>>({});
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const notifiedJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!job || ["finished", "failed"].includes(job.status)) return;
+    fetch(`${apiUrl}/api/config`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((config) => setEmailNotificationsAvailable(Boolean(config?.email_notifications_available)))
+      .catch(() => setEmailNotificationsAvailable(false));
+  }, []);
+
+  useEffect(() => {
+    if (job?.status !== "finished" || notifiedJobIdRef.current === job.job_id) return;
+    notifiedJobIdRef.current = job.job_id;
+    if (completionSoundEnabled) playCompletionSound(audioContextRef.current);
+  }, [job, completionSoundEnabled]);
+
+  useEffect(() => {
+    if (job?.status !== "review" || !job.candidates) return;
+    setSelectedCandidateIds(job.candidates.slice(0, 3).map((candidate) => candidate.id));
+    setCandidateEdits(
+      Object.fromEntries(
+        job.candidates.map((candidate) => [candidate.id, {
+          title: candidate.title,
+          start: candidate.start,
+          end: candidate.end,
+          caption_text: candidate.caption_text,
+        }]),
+      ),
+    );
+  }, [job?.job_id, job?.status]);
+
+  useEffect(() => {
+    if (!job || ["finished", "failed", "review", "cancelled"].includes(job.status)) return;
     const timer = window.setInterval(async () => {
       try {
         const response = await fetch(`${apiUrl}/api/status/${job.job_id}`);
@@ -59,16 +171,27 @@ export default function Home() {
 
   const activeStage = useMemo(() => stages.findIndex(([id]) => id === job?.status), [job?.status]);
 
+  function unlockCompletionSound() {
+    if (typeof window === "undefined" || !window.AudioContext) return;
+    audioContextRef.current ??= new window.AudioContext();
+    void audioContextRef.current.resume().catch(() => undefined);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setJob(null);
     setSubmitting(true);
+    if (completionSoundEnabled) unlockCompletionSound();
     try {
       const response = await fetch(`${apiUrl}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ youtube_url: url.trim(), attention_gameplay: attentionGameplay }),
+        body: JSON.stringify({
+          youtube_url: url.trim(),
+          attention_gameplay: attentionGameplay,
+          notification_email: emailNotificationsAvailable ? notificationEmail.trim() || null : null,
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not start this job.");
@@ -77,6 +200,60 @@ export default function Home() {
       setError(requestError instanceof Error ? requestError.message : "Could not start this job.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function toggleCandidate(candidateId: number) {
+    setSelectedCandidateIds((selected) =>
+      selected.includes(candidateId)
+        ? selected.filter((id) => id !== candidateId)
+        : selected.length < 3
+          ? [...selected, candidateId]
+          : selected,
+    );
+  }
+
+  function updateCandidate(candidateId: number, patch: Partial<CandidateEdit>) {
+    setCandidateEdits((edits) => ({
+      ...edits,
+      [candidateId]: { ...edits[candidateId], ...patch },
+    }));
+  }
+
+  async function submitReview() {
+    if (!job || selectedCandidateIds.length !== 3) return;
+    setReviewSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch(`${apiUrl}/api/jobs/${job.job_id}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clips: selectedCandidateIds.map((candidateId) => ({
+            candidate_id: candidateId,
+            ...candidateEdits[candidateId],
+          })),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not queue the reviewed clips.");
+      setJob({ ...job, status: "render_queued", message: "Your reviewed clips are queued for rendering." });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not queue the reviewed clips.");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }
+
+  async function cancelJob() {
+    if (!job) return;
+    try {
+      const response = await fetch(`${apiUrl}/api/jobs/${job.job_id}/cancel`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not cancel this job.");
+      setJob({ ...job, status: data.status, message: data.status === "cancelled" ? "Processing cancelled" : "Cancellation requested" });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not cancel this job.");
     }
   }
 
@@ -125,6 +302,33 @@ export default function Home() {
               <option value="subway_surfer">Subway Surfers</option>
               <option value="minecraft_parkour">Minecraft Parkour</option>
             </select>
+            {emailNotificationsAvailable && (
+              <label htmlFor="notification-email" className="mt-5 block font-body text-[10px] uppercase tracking-[0.2em] text-paper/55">
+                Email when finished (optional)
+                <input
+                  id="notification-email"
+                  type="email"
+                  value={notificationEmail}
+                  onChange={(event) => setNotificationEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  className="mt-2 w-full border-b border-paper/30 bg-transparent py-3 font-body text-sm normal-case tracking-normal text-paper outline-none placeholder:text-paper/35 focus:border-lime"
+                />
+              </label>
+            )}
+            <label className="mt-5 flex cursor-pointer items-center gap-3 font-body text-xs text-paper/75">
+              <input
+                type="checkbox"
+                checked={completionSoundEnabled}
+                onChange={(event) => {
+                  const enabled = event.target.checked;
+                  setCompletionSoundEnabled(enabled);
+                  if (enabled) unlockCompletionSound();
+                }}
+                className="h-4 w-4 accent-lime"
+              />
+              <span>Play a soft sound when clips are ready</span>
+            </label>
+            <p className="ml-7 mt-1 font-body text-[10px] text-paper/40">This only works while this page is open.</p>
             <button disabled={submitting} className="mt-7 flex w-full items-center justify-between bg-lime px-4 py-4 font-body text-xs font-bold uppercase tracking-[0.14em] text-ink transition hover:bg-white disabled:cursor-wait disabled:opacity-60">
               {submitting ? "Starting..." : "Generate clips"}
               <span className="text-lg leading-none">-&gt;</span>
@@ -135,7 +339,7 @@ export default function Home() {
 
         {error && <div className="mb-10 border-l-4 border-coral bg-coral/10 px-5 py-4 font-body text-xs text-ink">{error}</div>}
 
-        {job && job.status !== "finished" && (
+        {job && !["finished", "review"].includes(job.status) && (
           <section className="mb-20 border-y border-ink/15 py-8">
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
               <div>
@@ -143,18 +347,86 @@ export default function Home() {
                 <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em]">{job.status === "failed" ? "Something went wrong" : job.message}</h2>
                 {job.error && <p className="mt-2 max-w-2xl font-body text-xs leading-6 text-coral">{job.error}</p>}
               </div>
-              {job.status !== "failed" && <div className="loader h-3 w-3 bg-coral" />}
+              {!['failed', 'cancelled'].includes(job.status) && <div className="loader h-3 w-3 bg-coral" />}
             </div>
-            {job.status !== "failed" && (
-              <div className="mt-8 grid gap-2 sm:grid-cols-5">
-                {stages.map(([id, label], index) => (
-                  <div key={id} className="flex items-center gap-2 font-body text-[10px] uppercase tracking-[0.08em]">
-                    <span className={`h-2 w-2 shrink-0 ${index <= activeStage ? "bg-coral" : "bg-ink/15"}`} />
-                    <span className={index <= activeStage ? "text-ink" : "text-ink/35"}>{label}</span>
-                  </div>
-                ))}
-              </div>
+            {job.status !== "failed" && job.status !== "cancelled" && (
+              <>
+                <div className="mt-6 h-1.5 overflow-hidden bg-ink/10">
+                  <div className="h-full bg-coral transition-all" style={{ width: `${job.progress ?? 0}%` }} />
+                </div>
+                <div className="mt-8 grid gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {stages.map(([id, label], index) => (
+                    <div key={id} className="flex items-center gap-2 font-body text-[10px] uppercase tracking-[0.08em]">
+                      <span className={`h-2 w-2 shrink-0 ${index <= activeStage ? "bg-coral" : "bg-ink/15"}`} />
+                      <span className={index <= activeStage ? "text-ink" : "text-ink/35"}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <TimingDetails timings={job.timings} />
+                <button type="button" onClick={cancelJob} className="mt-5 border-b border-ink/30 pb-1 font-body text-[10px] font-bold uppercase tracking-[0.12em] text-ink/55 hover:text-coral">
+                  Cancel processing
+                </button>
+              </>
             )}
+          </section>
+        )}
+
+        {job?.status === "review" && (
+          <section className="mb-20 border-y border-ink/15 py-8">
+            <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <p className="font-body text-[10px] uppercase tracking-[0.2em] text-coral">Review before rendering</p>
+                <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em]">Choose three moments.</h2>
+                <p className="mt-2 font-body text-xs leading-5 text-ink/55">Preview each source section, adjust its timing and title, and correct the caption text.</p>
+              </div>
+              <span className="font-body text-xs text-ink/45">{selectedCandidateIds.length} / 3 selected</span>
+            </div>
+            <TimingDetails timings={job.timings} />
+            <div className="grid gap-6 lg:grid-cols-2">
+              {(job.candidates ?? []).map((candidate) => {
+                const edit = candidateEdits[candidate.id] ?? candidate;
+                const selected = selectedCandidateIds.includes(candidate.id);
+                return (
+                  <article key={candidate.id} className={`border p-4 ${selected ? "border-coral bg-white/50" : "border-ink/15"}`}>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-body text-[10px] uppercase tracking-[0.14em] text-coral">Candidate {candidate.id} · {candidate.score}/100</p>
+                        <p className="mt-1 font-body text-xs leading-5 text-ink/55">{candidate.reason}</p>
+                      </div>
+                      <label className="flex shrink-0 items-center gap-2 font-body text-[10px] font-bold uppercase tracking-[0.1em]">
+                        <input type="checkbox" checked={selected} disabled={!selected && selectedCandidateIds.length >= 3} onChange={() => toggleCandidate(candidate.id)} className="h-4 w-4 accent-coral" />
+                        Use
+                      </label>
+                    </div>
+                    <CandidatePreview key={`${job.job_id}-${candidate.id}`} src={`${apiUrl}/api/source/${job.job_id}`} start={Number(edit.start)} end={Number(edit.end)} />
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <label className="font-body text-[10px] uppercase tracking-[0.12em] text-ink/50">
+                        Start (seconds)
+                        <input type="number" min="0" step="0.1" value={edit.start} onChange={(event) => updateCandidate(candidate.id, { start: Number(event.target.value) })} className="mt-1 w-full border-b border-ink/20 bg-transparent py-2 text-sm text-ink outline-none focus:border-coral" />
+                      </label>
+                      <label className="font-body text-[10px] uppercase tracking-[0.12em] text-ink/50">
+                        End (seconds)
+                        <input type="number" min="0" step="0.1" value={edit.end} onChange={(event) => updateCandidate(candidate.id, { end: Number(event.target.value) })} className="mt-1 w-full border-b border-ink/20 bg-transparent py-2 text-sm text-ink outline-none focus:border-coral" />
+                      </label>
+                    </div>
+                    <label className="mt-4 block font-body text-[10px] uppercase tracking-[0.12em] text-ink/50">
+                      Clip title
+                      <input value={edit.title} maxLength={120} onChange={(event) => updateCandidate(candidate.id, { title: event.target.value })} className="mt-1 w-full border-b border-ink/20 bg-transparent py-2 text-sm text-ink outline-none focus:border-coral" />
+                    </label>
+                    <label className="mt-4 block font-body text-[10px] uppercase tracking-[0.12em] text-ink/50">
+                      Caption text
+                      <textarea rows={3} maxLength={3000} value={edit.caption_text} onChange={(event) => updateCandidate(candidate.id, { caption_text: event.target.value })} className="mt-1 w-full border border-ink/15 bg-transparent p-2 text-xs leading-5 text-ink outline-none focus:border-coral" />
+                    </label>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="mt-7 flex flex-wrap items-center gap-4">
+              <button type="button" disabled={selectedCandidateIds.length !== 3 || reviewSubmitting} onClick={submitReview} className="bg-ink px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.12em] text-paper transition hover:bg-coral disabled:cursor-not-allowed disabled:opacity-40">
+                {reviewSubmitting ? "Queueing..." : "Render selected clips →"}
+              </button>
+              <button type="button" onClick={cancelJob} className="font-body text-[10px] font-bold uppercase tracking-[0.12em] text-ink/50 hover:text-coral">Cancel job</button>
+            </div>
           </section>
         )}
 
@@ -167,6 +439,7 @@ export default function Home() {
               </div>
               <span className="hidden font-body text-xs text-ink/45 sm:block">1080 x 1920 / MP4</span>
             </div>
+            <TimingDetails timings={job.timings} />
             <div className="grid gap-8 md:grid-cols-3">
               {job.clips.map((clip) => (
                 <article key={clip.id} className="group">
