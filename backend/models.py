@@ -21,6 +21,7 @@ Stage = Literal[
 class GenerateRequest(BaseModel):
     youtube_url: str = Field(min_length=1)
     attention_gameplay: Literal["none", "subway_surfer", "minecraft_parkour"] = "none"
+    caption_language: Literal["auto", "original"] = "auto"
     notification_email: str | None = Field(
         default=None,
         max_length=320,

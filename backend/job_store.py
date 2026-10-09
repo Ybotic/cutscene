@@ -25,6 +25,7 @@ class JobStore:
                     youtube_url TEXT NOT NULL,
                     attention_gameplay TEXT NOT NULL,
                     notification_email TEXT,
+                    caption_language TEXT NOT NULL DEFAULT 'auto',
                     status TEXT NOT NULL,
                     message TEXT NOT NULL,
                     clips_json TEXT NOT NULL DEFAULT '[]',
@@ -44,6 +45,10 @@ class JobStore:
             }
             if "notification_email" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN notification_email TEXT")
+            if "caption_language" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN caption_language TEXT NOT NULL DEFAULT 'auto'"
+                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -66,6 +71,7 @@ class JobStore:
         *,
         max_active: int | None = None,
         notification_email: str | None = None,
+        caption_language: str = "auto",
     ) -> bool:
         now = time.time()
         with self._lock, self._connect() as connection:
@@ -79,11 +85,19 @@ class JobStore:
             connection.execute(
                 """
                 INSERT INTO jobs (
-                    job_id, youtube_url, attention_gameplay, notification_email,
+                    job_id, youtube_url, attention_gameplay, notification_email, caption_language,
                     status, message, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'queued', 'Queued for processing', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'queued', 'Queued for processing', ?, ?)
                 """,
-                (job_id, youtube_url, attention_gameplay, notification_email, now, now),
+                (
+                    job_id,
+                    youtube_url,
+                    attention_gameplay,
+                    notification_email,
+                    caption_language,
+                    now,
+                    now,
+                ),
             )
         return True
 
@@ -310,6 +324,7 @@ class JobStore:
             "job_id": row["job_id"],
             "youtube_url": row["youtube_url"],
             "attention_gameplay": row["attention_gameplay"],
+            "caption_language": row["caption_language"],
             "notification_email": row["notification_email"],
             "status": status,
             "message": row["message"],

@@ -7,6 +7,7 @@ from typing import Any
 
 from backend.services.clip_detector import find_best_clips
 from backend.services.captions import replace_caption_text
+from backend.services.caption_translation import transliterate_hindi_captions
 from backend.services.downloader import download_video
 from backend.services.transcription import transcribe, transcribe_range
 from backend.services.video_editor import render_clip
@@ -86,6 +87,7 @@ def render_selected(
     job_dir: Path,
     output_dir: Path,
     attention_gameplay: str,
+    caption_language: str,
     update: Update,
     record_timing: RecordTiming,
     check_cancelled: CheckCancelled,
@@ -98,6 +100,25 @@ def render_selected(
         raise RuntimeError("The saved transcript is missing; regenerate the candidates.")
     coarse_transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
     gameplay_asset = _gameplay_asset(attention_gameplay)
+    caption_texts = {
+        index: str(edit.get("caption_text", ""))
+        for index, edit in enumerate(selected, start=1)
+    }
+    update(
+        "aligning",
+        "Detecting Hindi captions and creating Hinglish when detected"
+        if caption_language == "auto"
+        else "Keeping original caption script",
+    )
+    translated_captions = _timed(
+        "caption_transliteration",
+        record_timing,
+        lambda: transliterate_hindi_captions(
+            caption_texts,
+            coarse_transcript.get("language"),
+            caption_language,
+        ),
+    )
 
     aligned: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
     for index, edit in enumerate(selected, start=1):
@@ -110,7 +131,7 @@ def render_selected(
                 source, float(edit["start"]), float(edit["end"]), job_dir
             ),
         )
-        caption_text = edit.get("caption_text")
+        caption_text = translated_captions.get(index, edit.get("caption_text"))
         if caption_text is not None:
             detailed = replace_caption_text(
                 detailed,

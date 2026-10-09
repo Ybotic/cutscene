@@ -178,4 +178,4 @@ def _transcribe_file(video_path: Path, *, word_timestamps: bool) -> dict[str, An
     if not segments:
         raise TranscriptionError("The video did not contain usable speech.")
 
-    return {"segments": segments}
+    return {"segments": segments, "language": result.get("language")}
