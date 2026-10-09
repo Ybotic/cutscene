@@ -76,7 +76,7 @@ def render_clip(
     dimensions = (int(tracking.get("width", 0)), int(tracking.get("height", 0)))
     if not all(dimensions):
         dimensions = _video_dimensions(source)
-    main_height = 1248 if gameplay_asset else 1920
+    main_height = 1152 if gameplay_asset else 1920
     crop = calculate_dynamic_crop(
         tracking, dimensions, output_dimensions=(1080, main_height), duration=duration
     )
@@ -87,8 +87,8 @@ def render_clip(
     if gameplay_asset:
         video_filter = (
             f"[0:v]{crop_filter}[main];"
-            "[1:v]scale=1080:672:force_original_aspect_ratio=increase:flags=lanczos,"
-            "crop=1080:672,setsar=1[game];"
+            "[1:v]scale=1080:768:force_original_aspect_ratio=increase:flags=lanczos,"
+            "crop=1080:768,setsar=1[game];"
             f"[main][game]vstack=inputs=2,{subtitle_filter}[outv]"
         )
         filter_args = ["-filter_complex", video_filter, "-map", "[outv]", "-map", "0:a?"]

@@ -6,4 +6,4 @@ Add locally sourced/appropriately licensed videos here using these exact filenam
 - `minecraft_parkour.mp4`
 
 The application does not download assets. The renderer loops the selected video as
-needed, fits it into the lower 35% of the vertical composition, and removes its audio.
+needed, fits it into the lower 40% of the vertical composition, and removes its audio.
