@@ -143,7 +143,7 @@ The transcript and sampled candidate frames are sent to OpenRouter for clip sele
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | Required for clip selection | none |
-| `OPENROUTER_MODEL` | OpenRouter model for clip selection | `openai/gpt-6-luna` |
+| `OPENROUTER_MODEL` | OpenRouter model for clip selection | `dots-studio/dots-3-note-preview:free` |
 | `WHISPER_MODEL` | Whisper model name | `base` |
 | `WHISPER_DEVICE` | Whisper device: `auto`, `cuda`, or `cpu` | `auto` |
 | `MAX_VIDEO_SECONDS` | Download duration limit | `7200` |

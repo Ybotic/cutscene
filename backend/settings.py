@@ -12,7 +12,9 @@ load_dotenv(ROOT_DIR / ".env")
 @dataclass(frozen=True)
 class Settings:
     openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    openrouter_model: str = os.getenv("OPENROUTER_MODEL", "openai/gpt-6-luna")
+    openrouter_model: str = os.getenv(
+        "OPENROUTER_MODEL", "dots-studio/dots-3-note-preview:free"
+    )
     whisper_model: str = os.getenv("WHISPER_MODEL", "base")
     whisper_device: str = os.getenv("WHISPER_DEVICE", "auto")
     max_video_seconds: int = int(os.getenv("MAX_VIDEO_SECONDS", "7200"))
