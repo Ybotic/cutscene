@@ -26,7 +26,7 @@ data/                      Persistent SQLite job database
 
 The API endpoints include:
 
-- `POST /api/generate` with `{ "youtube_url": "...", "attention_gameplay": "none" }`
+- `POST /api/generate` with `{ "youtube_url": "...", "attention_gameplay": "none", "caption_language": "auto" }`
 - `GET /api/status/{job_id}` for processing state, candidates, stage timings, and finished clip metadata
 - `POST /api/jobs/{job_id}/render` with three reviewed clip edits
 - `POST /api/jobs/{job_id}/cancel` to cancel an active or review job
@@ -133,10 +133,10 @@ The frontend is at `http://localhost:3000` and the API is at `http://localhost:8
 5. The user previews the source around each candidate, chooses three, adjusts start/end/title, and edits caption text.
 6. Whisper generates word timestamps only for the selected ranges. OpenCV tracks faces using downscaled frames and temporal association; crop movement is smoothed, with a centered fallback when tracking is uncertain. Active-speaker identification is not implemented.
 7. FFmpeg renders the selected clips. Rendering is sequential by default; `RENDER_WORKERS` can be raised to benchmark bounded parallel rendering on the deployment hardware.
-8. When selected, a local gameplay video is looped silently in the lower 35% while source video and its audio remain intact in the upper 65%.
+8. When selected, a local gameplay video is looped silently in the lower 40% while source video and its audio remain intact in the upper 60%.
 9. The caption service maps timed words into short ASS events. Job status returns progress, stage timings, clip metadata, and download URLs.
 
-The transcript and sampled candidate frames are sent to OpenRouter for clip selection; the full source video is not sent to OpenRouter. The browser completion sound is available by default. An email field appears only when SMTP delivery is configured, and its address is retained with the job until normal retention cleanup.
+With **Auto-detect Hindi → Hinglish**, the worker detects Hindi from Whisper's language result or Devanagari script and asks OpenRouter to romanize selected captions. **Keep original script** skips that conversion. The transcript, sampled candidate frames, and, when applicable, selected Hindi captions are sent to OpenRouter; the full source video is not sent. The browser completion sound is available by default. An email field appears only when SMTP delivery is configured, and its address is retained with the job until normal retention cleanup.
 
 ## Environment Variables
 
