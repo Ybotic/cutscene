@@ -143,7 +143,7 @@ The transcript and sampled candidate frames are sent to OpenRouter for clip sele
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | Required for clip selection | none |
-| `OPENROUTER_MODEL` | OpenRouter model for clip selection | `google/gemma-4-31b-it:free` |
+| `OPENROUTER_MODEL` | OpenRouter model for clip selection | `openai/gpt-6-luna` |
 | `WHISPER_MODEL` | Whisper model name | `base` |
 | `WHISPER_DEVICE` | Whisper device: `auto`, `cuda`, or `cpu` | `auto` |
 | `MAX_VIDEO_SECONDS` | Download duration limit | `7200` |
@@ -170,7 +170,7 @@ Email notifications stay hidden in the UI until `SMTP_HOST` and `SMTP_FROM` are 
 - Caption emphasis is grouped word-timed text rather than per-word karaoke highlighting.
 - Whisper and FFmpeg must be installed and available to the process/container.
 - Some videos may be unavailable because of region, age, login, or YouTube download restrictions.
-- The free OpenRouter model can be rate-limited or temporarily unavailable; visual ranking falls back to transcript ranking in that case.
+- OpenRouter model availability and pricing depend on the selected provider/model; visual ranking falls back to transcript ranking if the visual request fails.
 - The evaluation schema and scripts are included, but the example annotations are illustrative. A representative human-rated video set still needs to be collected and labeled.
 
 ## Future Improvements
