@@ -92,7 +92,6 @@ def process_job(job_id: str) -> None:
                     job_dir,
                     settings.output_dir,
                     job["attention_gameplay"],
-                    job["caption_language"],
                     lambda status, message: _set_stage(job_id, status, message),
                     lambda name, seconds: _record_timing(job_id, name, seconds),
                     lambda: _check_cancelled(job_id),

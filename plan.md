@@ -9,7 +9,7 @@ This plan tracks implementation of the product, speed, tracking, and reliability
 - [x] Keep the crop focused on the same nearby face across samples rather than choosing the largest detected face independently each time.
 - [x] Add tests for face selection continuity and keep existing crop tests passing.
 - [x] Give optional gameplay 40% of the vertical composition and source video 60%.
-- [x] Add automatic Hindi-to-Hinglish caption conversion and an original-script option.
+- [x] Automatically detect Hindi and render its captions as Hinglish without requiring a user setting.
 
 ## Phase 1 — Measure and reduce processing time
 
@@ -24,7 +24,7 @@ This plan tracks implementation of the product, speed, tracking, and reliability
 
 - [x] Add a review step before final rendering. Users can preview candidates, choose three, adjust start/end times, edit titles, and correct captions.
 - [x] Improve moment selection with sampled video frames and scene-change hints sent with the transcript to the vision-capable OpenRouter model.
-- [x] Add a caption option that detects Hindi and renders it as Roman-script Hinglish, with an original-script option.
+- [x] Automatically detect Hindi and render captions as Roman-script Hinglish; leave non-Hindi captions unchanged.
 - [ ] Collect and label a small, consented human-rated video set. Evaluation schemas and scripts are in `backend/evaluation/`; the example annotations are illustrative only.
 
 ## Phase 3 — Improve tracking quality

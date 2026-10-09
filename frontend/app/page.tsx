@@ -115,7 +115,6 @@ function TimingDetails({ timings }: { timings?: Record<string, number> }) {
 export default function Home() {
   const [url, setUrl] = useState("");
   const [attentionGameplay, setAttentionGameplay] = useState("none");
-  const [captionLanguage, setCaptionLanguage] = useState("auto");
   const [job, setJob] = useState<Job | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -191,7 +190,6 @@ export default function Home() {
         body: JSON.stringify({
           youtube_url: url.trim(),
           attention_gameplay: attentionGameplay,
-          caption_language: captionLanguage,
           notification_email: emailNotificationsAvailable ? notificationEmail.trim() || null : null,
         }),
       });
@@ -304,19 +302,6 @@ export default function Home() {
               <option value="subway_surfer">Subway Surfers</option>
               <option value="minecraft_parkour">Minecraft Parkour</option>
             </select>
-            <label htmlFor="caption-language" className="mt-6 block font-body text-[10px] uppercase tracking-[0.2em] text-paper/55">
-              Caption language
-              <select
-                id="caption-language"
-                value={captionLanguage}
-                onChange={(event) => setCaptionLanguage(event.target.value)}
-                className="mt-3 w-full border-b border-paper/30 bg-ink py-3 font-body text-sm text-paper outline-none focus:border-lime"
-              >
-                <option value="auto">Auto-detect Hindi → Hinglish</option>
-                <option value="original">Keep original script</option>
-              </select>
-              <span className="mt-1 block normal-case tracking-normal text-paper/40">Hindi captions are romanized for the rendered video when detected.</span>
-            </label>
             {emailNotificationsAvailable && (
               <label htmlFor="notification-email" className="mt-5 block font-body text-[10px] uppercase tracking-[0.2em] text-paper/55">
                 Email when finished (optional)

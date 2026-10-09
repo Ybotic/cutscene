@@ -87,7 +87,6 @@ def render_selected(
     job_dir: Path,
     output_dir: Path,
     attention_gameplay: str,
-    caption_language: str,
     update: Update,
     record_timing: RecordTiming,
     check_cancelled: CheckCancelled,
@@ -106,9 +105,7 @@ def render_selected(
     }
     update(
         "aligning",
-        "Detecting Hindi captions and creating Hinglish when detected"
-        if caption_language == "auto"
-        else "Keeping original caption script",
+        "Detecting Hindi captions and creating Hinglish when detected",
     )
     translated_captions = _timed(
         "caption_transliteration",
@@ -116,7 +113,6 @@ def render_selected(
         lambda: transliterate_hindi_captions(
             caption_texts,
             coarse_transcript.get("language"),
-            caption_language,
         ),
     )
 

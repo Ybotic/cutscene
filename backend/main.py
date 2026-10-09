@@ -64,7 +64,6 @@ def generate(request: GenerateRequest) -> dict[str, str]:
         request.attention_gameplay,
         max_active=max(1, settings.max_queued_jobs),
         notification_email=request.notification_email,
-        caption_language=request.caption_language,
     )
     if not accepted:
         raise HTTPException(

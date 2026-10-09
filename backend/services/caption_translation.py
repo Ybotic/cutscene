@@ -13,21 +13,21 @@ def contains_devanagari(text: str) -> bool:
     return any("\u0900" <= character <= "\u097f" for character in text)
 
 
-def should_transliterate(text: str, source_language: str | None, mode: str) -> bool:
-    if not text.strip() or mode == "original":
+def should_transliterate(text: str, source_language: str | None) -> bool:
+    if not text.strip():
         return False
     return (source_language or "").lower().startswith("hi") or contains_devanagari(text)
 
 
 def transliterate_hindi_captions(
-    captions: dict[int, str], source_language: str | None, mode: str
+    captions: dict[int, str], source_language: str | None
 ) -> dict[int, str]:
     """Romanize detected Hindi captions while preserving English words and order."""
     output = dict(captions)
     targets = {
         caption_id: text
         for caption_id, text in captions.items()
-        if should_transliterate(text, source_language, mode)
+        if should_transliterate(text, source_language)
     }
     if not targets:
         return output

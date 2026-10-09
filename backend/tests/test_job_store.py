@@ -59,19 +59,6 @@ class JobStoreTests(unittest.TestCase):
             self.store.get("job-email")["notification_email"], "creator@example.com"
         )
 
-    def test_caption_language_choice_is_persisted(self):
-        self.store.create(
-            "job-captions",
-            "https://youtu.be/example",
-            "none",
-            caption_language="original",
-        )
-        self.assertEqual(self.store.get("job-captions")["caption_language"], "original")
-
-    def test_caption_language_defaults_to_auto(self):
-        self.store.create("job-default-caption", "https://youtu.be/example", "none")
-        self.assertEqual(self.store.get("job-default-caption")["caption_language"], "auto")
-
     def test_review_can_only_be_queued_for_render_once(self):
         self.store.create("job-4", "https://youtu.be/example", "none")
         self.store.update("job-4", status="review")
