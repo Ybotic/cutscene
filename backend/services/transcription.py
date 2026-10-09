@@ -1,7 +1,9 @@
 import json
+import subprocess
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from uuid import uuid4
 
 from backend.settings import settings
 
@@ -75,10 +77,78 @@ def _get_model():
     return _model
 
 
-def transcribe(video_path: Path, transcript_path: Path) -> dict[str, Any]:
+def transcribe(
+    video_path: Path,
+    transcript_path: Path,
+    *,
+    word_timestamps: bool = True,
+) -> dict[str, Any]:
+    transcript = _transcribe_file(video_path, word_timestamps=word_timestamps)
+    transcript_path.write_text(json.dumps(transcript, indent=2), encoding="utf-8")
+    return transcript
+
+
+def transcribe_range(
+    video_path: Path,
+    start: float,
+    end: float,
+    scratch_dir: Path,
+) -> dict[str, Any]:
+    """Generate word timings only for a selected range and return source-time stamps."""
+    duration = end - start
+    if start < 0 or duration <= 0:
+        raise TranscriptionError("The selected clip range is invalid.")
+    audio_path = scratch_dir / f"alignment_{uuid4().hex}.wav"
+    try:
+        try:
+            process = subprocess.run(
+                [
+                    settings.ffmpeg_binary,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-ss",
+                    f"{start:.3f}",
+                    "-i",
+                    str(video_path),
+                    "-t",
+                    f"{duration:.3f}",
+                    "-map",
+                    "0:a:0",
+                    "-vn",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(audio_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            raise TranscriptionError("FFmpeg could not prepare clip audio.") from exc
+        if process.returncode != 0:
+            raise TranscriptionError("FFmpeg could not prepare clip audio.")
+        transcript = _transcribe_file(audio_path, word_timestamps=True)
+        for segment in transcript["segments"]:
+            segment["start"] += start
+            segment["end"] += start
+            for word in segment["words"]:
+                word["start"] += start
+                word["end"] += start
+        return transcript
+    finally:
+        audio_path.unlink(missing_ok=True)
+
+
+def _transcribe_file(video_path: Path, *, word_timestamps: bool) -> dict[str, Any]:
     try:
         result = _get_model().transcribe(
-            str(video_path), word_timestamps=True, verbose=False
+            str(video_path), word_timestamps=word_timestamps, verbose=False
         )
     except TranscriptionError:
         raise
@@ -108,6 +178,4 @@ def transcribe(video_path: Path, transcript_path: Path) -> dict[str, Any]:
     if not segments:
         raise TranscriptionError("The video did not contain usable speech.")
 
-    transcript = {"segments": segments}
-    transcript_path.write_text(json.dumps(transcript, indent=2), encoding="utf-8")
-    return transcript
+    return {"segments": segments}
