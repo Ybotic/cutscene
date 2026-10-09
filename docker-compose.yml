@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    gpus: all
+    image: ai-clipper-backend:local
     env_file:
       - .env
     ports:
@@ -11,13 +11,28 @@ services:
     volumes:
       - ./temp:/app/temp
       - ./output:/app/output
+      - ./data:/app/data
+
+  worker:
+    image: ai-clipper-backend:local
+    command: ["python", "-m", "backend.worker"]
+    init: true
+    stop_grace_period: 2m
+    depends_on:
+      - backend
+    env_file:
+      - .env
+    volumes:
+      - ./temp:/app/temp
+      - ./output:/app/output
+      - ./data:/app/data
 
   frontend:
     build:
       context: frontend
       dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
     depends_on:

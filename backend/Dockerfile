@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
     && pip install --no-cache-dir -r backend/requirements.txt
 COPY backend backend
 COPY assets assets
-RUN mkdir -p temp output
+RUN mkdir -p temp output data
 
 EXPOSE 8000
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
