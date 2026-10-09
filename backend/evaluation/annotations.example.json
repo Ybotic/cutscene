@@ -1,0 +1,29 @@
+{
+  "samples": [
+    {
+      "source_id": "replace-with-a-consented-test-video-id",
+      "human_clips": [
+        { "start": 120.0, "end": 158.0, "rating": 5 }
+      ],
+      "predicted_clips": [
+        { "start": 122.0, "end": 159.0, "score": 83 }
+      ],
+      "candidate_ratings": [
+        { "score": 83, "rating": 5 },
+        { "score": 68, "rating": 3 }
+      ],
+      "caption_timings": [
+        {
+          "reference_start": 120.2,
+          "predicted_start": 120.3,
+          "reference_end": 120.6,
+          "predicted_end": 120.7
+        }
+      ],
+      "tracking": {
+        "reference": [{ "time": 0.0, "x_norm": 0.5, "y_norm": 0.42 }],
+        "predicted": [{ "time": 0.0, "x_norm": 0.52, "y_norm": 0.43 }]
+      }
+    }
+  ]
+}
