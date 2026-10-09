@@ -23,6 +23,43 @@ def _words_in_range(transcript: dict[str, Any], start: float, end: float) -> lis
     return words
 
 
+def replace_caption_text(
+    transcript: dict[str, Any], text: str, start: float, end: float
+) -> dict[str, Any]:
+    """Replace caption words, retaining timings when the word count is unchanged."""
+    words = text.split()
+    if not words:
+        return {"segments": []}
+    timed_words = _words_in_range(transcript, start, end)
+    if len(timed_words) == len(words):
+        intervals = [
+            (float(word["start"]), float(word["end"])) for word in timed_words
+        ]
+    else:
+        duration = max(0.1, end - start)
+        intervals = [
+            (
+                start + duration * index / len(words),
+                start + duration * (index + 1) / len(words),
+            )
+            for index in range(len(words))
+        ]
+    custom_words = [
+        {"word": word, "start": word_start, "end": max(word_start + 0.05, word_end)}
+        for word, (word_start, word_end) in zip(words, intervals)
+    ]
+    return {
+        "segments": [
+            {
+                "start": start,
+                "end": end,
+                "text": " ".join(words),
+                "words": custom_words,
+            }
+        ]
+    }
+
+
 def write_ass_file(
     transcript: dict[str, Any], clip_start: float, clip_end: float, path: Path
 ) -> None:

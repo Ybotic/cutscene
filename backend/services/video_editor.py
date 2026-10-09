@@ -1,5 +1,8 @@
 import json
 import subprocess
+import tempfile
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from backend.services.captions import write_ass_file
@@ -11,18 +14,42 @@ class VideoEditorError(RuntimeError):
     pass
 
 
-def _run_ffmpeg(args: list[str]) -> None:
-    try:
-        process = subprocess.run(
-            [settings.ffmpeg_binary, "-y", "-hide_banner", "-loglevel", "error", *args],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise VideoEditorError("FFmpeg is not installed or is not on PATH.") from exc
+def _run_ffmpeg(
+    args: list[str], check_cancelled: Callable[[], None] | None = None
+) -> None:
+    with tempfile.TemporaryFile(mode="w+t") as stderr_file:
+        try:
+            process = subprocess.Popen(
+                [settings.ffmpeg_binary, "-y", "-hide_banner", "-loglevel", "error", *args],
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise VideoEditorError("FFmpeg is not installed or is not on PATH.") from exc
+        try:
+            while process.poll() is None:
+                if check_cancelled is not None:
+                    try:
+                        check_cancelled()
+                    except Exception:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait()
+                        raise
+                time.sleep(0.25)
+        except Exception:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            raise
+        stderr_file.seek(0)
+        stderr = stderr_file.read()
     if process.returncode != 0:
-        detail = process.stderr.strip().splitlines()[-1:] or ["unknown FFmpeg error"]
+        detail = stderr.strip().splitlines()[-1:] or ["unknown FFmpeg error"]
         raise VideoEditorError(f"FFmpeg failed: {detail[0]}")
 
 
@@ -35,12 +62,17 @@ def render_clip(
     subtitle_path: Path,
     *,
     gameplay_asset: Path | None = None,
+    check_cancelled: Callable[[], None] | None = None,
+    record_timing: Callable[[str, float], None] | None = None,
 ) -> None:
     write_ass_file(transcript, start, end, subtitle_path)
     duration = max(1.0, end - start)
     escaped_subtitle_path = subtitle_path.as_posix().replace(":", "\\:")
     subtitle_filter = f"subtitles={escaped_subtitle_path}"
+    tracking_started = time.perf_counter()
     tracking = track_subject(str(source), start, end)
+    if record_timing:
+        record_timing("tracking", time.perf_counter() - tracking_started)
     dimensions = (int(tracking.get("width", 0)), int(tracking.get("height", 0)))
     if not all(dimensions):
         dimensions = _video_dimensions(source)
@@ -60,32 +92,46 @@ def render_clip(
             f"[main][game]vstack=inputs=2,{subtitle_filter}[outv]"
         )
         filter_args = ["-filter_complex", video_filter, "-map", "[outv]", "-map", "0:a?"]
-        inputs = ["-ss", f"{start:.3f}", "-i", str(source), "-stream_loop", "-1", "-i", str(gameplay_asset)]
+        inputs = [
+            "-ss",
+            f"{start:.3f}",
+            "-i",
+            str(source),
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(gameplay_asset),
+        ]
     else:
         video_filter = f"{crop_filter},{subtitle_filter}"
         filter_args = ["-vf", video_filter]
         inputs = ["-ss", f"{start:.3f}", "-i", str(source)]
-    _run_ffmpeg(
-        [
-            *inputs,
-            "-t",
-            f"{duration:.3f}",
-            *filter_args,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "21",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-movflags",
-            "+faststart",
-            str(output_path),
-        ]
-    )
+    try:
+        _run_ffmpeg(
+            [
+                *inputs,
+                "-t",
+                f"{duration:.3f}",
+                *filter_args,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "21",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            ],
+            check_cancelled=check_cancelled,
+        )
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise
 
 
 def _video_dimensions(source: Path) -> tuple[int, int]:
