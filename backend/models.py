@@ -2,7 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from backend.constants import DEFAULT_CLIP_COUNT, MAX_CLIP_COUNT
+from backend.constants import (
+    DEFAULT_CLIP_COUNT,
+    MAX_CLIP_COUNT,
+    MAX_YOUTUBE_URL_LENGTH,
+)
 
 
 Stage = Literal[
@@ -21,7 +25,7 @@ Stage = Literal[
 
 
 class GenerateRequest(BaseModel):
-    youtube_url: str = Field(min_length=1)
+    youtube_url: str = Field(min_length=1, max_length=MAX_YOUTUBE_URL_LENGTH)
     clip_count: int = Field(default=DEFAULT_CLIP_COUNT, ge=1, le=MAX_CLIP_COUNT)
     attention_gameplay: Literal["none", "subway_surfer", "minecraft_parkour"] = "none"
     notification_email: str | None = Field(

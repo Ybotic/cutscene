@@ -3,6 +3,7 @@ from pathlib import Path
 from collections.abc import Callable
 from urllib.parse import urlparse
 
+from backend.constants import MAX_YOUTUBE_URL_LENGTH
 from backend.settings import settings
 
 
@@ -11,13 +12,37 @@ class DownloadError(RuntimeError):
 
 
 def validate_youtube_url(url: str) -> None:
-    parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower().removeprefix("www.")
-    if parsed.scheme not in {"http", "https"} or hostname not in {
-        "youtube.com",
-        "m.youtube.com",
-        "youtu.be",
-    }:
+    if (
+        not isinstance(url, str)
+        or not url
+        or len(url) > MAX_YOUTUBE_URL_LENGTH
+        or url != url.strip()
+        or any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in url
+        )
+    ):
+        raise DownloadError("Please enter a valid YouTube URL.")
+
+    try:
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").lower().removeprefix("www.")
+        port = parsed.port
+    except ValueError as exc:
+        raise DownloadError("Please enter a valid YouTube URL.") from exc
+
+    expected_port = {"http": 80, "https": 443}.get(parsed.scheme)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or (port is not None and port != expected_port)
+        or hostname not in {
+            "youtube.com",
+            "m.youtube.com",
+            "youtu.be",
+        }
+    ):
         raise DownloadError("Please enter a valid YouTube URL.")
 
 
