@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
+from backend.constants import DEFAULT_CLIP_COUNT
 from backend.services.clip_detector import find_best_clips
 from backend.services.captions import replace_caption_text
 from backend.services.caption_translation import transliterate_hindi_captions
@@ -26,6 +27,7 @@ def prepare_job(
     update: Update,
     record_timing: RecordTiming,
     check_cancelled: CheckCancelled,
+    clip_count: int = DEFAULT_CLIP_COUNT,
 ) -> list[dict[str, Any]]:
     """Download, transcribe coarsely, and return candidates for user review."""
     check_cancelled()
@@ -56,7 +58,7 @@ def prepare_job(
     candidates = _timed(
         "clip_selection",
         record_timing,
-        lambda: find_best_clips(transcript, source),
+        lambda: find_best_clips(transcript, source, clip_count=clip_count),
     )
     metadata_path = job_dir / "source_metadata.json"
     source_duration = (

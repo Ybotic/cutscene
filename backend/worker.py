@@ -113,12 +113,22 @@ def process_job(job_id: str) -> None:
                 lambda status, message: _set_stage(job_id, status, message),
                 lambda name, seconds: _record_timing(job_id, name, seconds),
                 lambda: _check_cancelled(job_id),
+                clip_count=job["requested_clip_count"],
             )
             _check_cancelled(job_id)
+            if len(candidates) < job["requested_clip_count"]:
+                review_message = (
+                    f"AI found {len(candidates)} of {job['requested_clip_count']} "
+                    "requested moments. Choose from the available clips, then render."
+                )
+            else:
+                review_message = (
+                    f"Found {len(candidates)} moments. Choose the clips to render."
+                )
             job_store.update(
                 job_id,
                 status="review",
-                message="Choose three moments, adjust them, then render.",
+                message=review_message,
                 candidates=candidates,
                 error=None,
             )
