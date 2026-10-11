@@ -62,6 +62,7 @@ def generate(request: GenerateRequest) -> dict[str, str]:
         job_id,
         request.youtube_url,
         request.attention_gameplay,
+        requested_clip_count=request.clip_count,
         max_active=max(1, settings.max_queued_jobs),
         notification_email=request.notification_email,
     )
@@ -84,10 +85,17 @@ def render_reviewed_clips(job_id: str, request: ReviewRequest) -> dict[str, str]
     candidates = {item["id"]: item for item in job["candidates"]}
     edits = [clip.model_dump() for clip in request.clips]
     selected_ids = [item["candidate_id"] for item in edits]
-    if len(set(selected_ids)) != 3 or any(
+    if len(set(selected_ids)) != len(selected_ids) or any(
         candidate_id not in candidates for candidate_id in selected_ids
     ):
-        raise HTTPException(status_code=400, detail="Choose three different listed candidates.")
+        raise HTTPException(
+            status_code=400, detail="Choose different candidates from the listed moments."
+        )
+    if len(edits) > job["requested_clip_count"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You requested no more than {job['requested_clip_count']} clips.",
+        )
     source_duration = max(
         (float(candidate.get("source_duration", 0)) for candidate in job["candidates"]),
         default=0.0,
