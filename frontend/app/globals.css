@@ -1,6 +1,14 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #17171a;
+  --color-paper: #f4f1ea;
+  --color-lime: #c8f36c;
+  --color-coral: #ff6b4a;
+  --font-display: Arial, Helvetica, sans-serif;
+  --font-body: "Courier New", monospace;
+  --shadow-card: 0 20px 60px rgba(23, 23, 26, 0.12);
+}
 
 :root {
   color-scheme: light;
