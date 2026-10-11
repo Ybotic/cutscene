@@ -1,70 +1,70 @@
 # AI Clipper
 
-Turn a YouTube video into three vertical clips with captions. The app uses a Next.js frontend, a FastAPI backend, a background worker, FFmpeg, Whisper, and OpenRouter.
+Run AI Clipper on your own computer. Paste a YouTube URL in the local web app to generate and edit three vertical clips with captions.
 
-## Architecture
+## How it works
 
 ```text
-Browser → Next.js frontend (Vercel) → FastAPI API (VPS)
-                                         ↓
-                                  SQLite job queue
-                                         ↓
-                                  Background worker
-                           yt-dlp · Whisper · OpenRouter · FFmpeg
-                                         ↓
-                         Persistent job files and rendered clips
+Browser → Next.js web app (localhost:3000) → FastAPI (localhost:8000)
+                                                    ↓
+                                             SQLite job queue
+                                                    ↓
+                                         Local background worker
+                                    yt-dlp · Whisper · FFmpeg
+                                                    ↓
+                                      Clips saved on your computer
+
+                         Worker uses OpenRouter for clip suggestions
 ```
 
-The frontend submits jobs to the API. The worker processes them separately, and the API returns progress and serves the finished clips. The API, worker, SQLite database, and files live on one persistent server.
+The app and video processing run locally, and Whisper can use an NVIDIA GPU. YouTube downloads and OpenRouter clip suggestions require an internet connection, so processing is local but not fully offline.
 
-## Run locally
+## Requirements
 
-You need Docker with Docker Compose and an [OpenRouter API key](https://openrouter.ai/).
+- Docker with Docker Compose
+- An [OpenRouter API key](https://openrouter.ai/)
+- For GPU mode: an NVIDIA GPU, its driver, and NVIDIA Container Toolkit configured for Docker
+
+The included GPU setup uses CUDA with Whisper. Other setups can use CPU mode.
+
+## Start the app
+
+From the project directory, create the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-Add your key as `OPENROUTER_API_KEY` in `.env`, then run:
+Open `.env` and set `OPENROUTER_API_KEY`. `WHISPER_DEVICE=auto` uses CUDA when Docker can see the GPU, otherwise it falls back to CPU.
+
+Start with NVIDIA GPU support:
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The API is available at [http://localhost:8000](http://localhost:8000).
-
-## Deploy
-
-The frontend can run on Vercel. The API and worker need an always-on server: they process video with FFmpeg and Whisper, which are not a good fit for Vercel serverless functions. A small Linux VPS with Docker and persistent disk is a straightforward option. CPU works; a GPU can speed up processing.
-
-### 1. Deploy the backend and worker
-
-On the VPS, clone the repo, create `.env` from `.env.example`, and set:
-
-```env
-OPENROUTER_API_KEY=your-key
-FRONTEND_ORIGIN=https://your-app.vercel.app
-PUBLIC_API_ORIGIN=https://api.example.com
-```
-
-Point `api.example.com` to the VPS and configure an HTTPS reverse proxy to the app on port `8000`. Then start the API and worker:
+Open [http://localhost:3000](http://localhost:3000) in your browser. To launch it from another terminal:
 
 ```bash
-docker compose up -d --build backend worker
+# Linux
+xdg-open http://localhost:3000
+
+# macOS
+open http://localhost:3000
 ```
 
-Keep the server's `data/`, `temp/`, and `output/` directories on persistent disk; they hold job records and video files.
+On Windows PowerShell, run `Start-Process http://localhost:3000`.
 
-### 2. Deploy the frontend on Vercel
+To run without an NVIDIA GPU, use:
 
-Import the repository in Vercel, set **Root Directory** to `frontend`, and add this environment variable before deploying:
-
-```env
-NEXT_PUBLIC_API_URL=https://api.example.com
+```bash
+docker compose up --build -d
 ```
 
-If you use a custom Vercel domain, update `FRONTEND_ORIGIN` in the backend's `.env` to match it, then restart the backend. `NEXT_PUBLIC_API_URL` is set at build time.
+The first build downloads the application dependencies; the first run also downloads the Whisper model. To view logs, run `docker compose logs -f`. To stop the app, run:
 
-Check that `https://api.example.com/api/health` responds after deployment.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
+```
 
-> This project currently has no user authentication and uses a single-server SQLite queue. Add access control before opening it to the public.
+Job records and generated files are stored in the local `data/`, `temp/`, and `output/` directories.
