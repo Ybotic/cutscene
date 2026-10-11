@@ -1,6 +1,6 @@
 # AI Clipper
 
-Run AI Clipper on your own computer. Paste a YouTube URL in the local web app to request and edit one to five vertical clips with captions.
+Run AI Clipper on your own computer. Paste a YouTube URL in the local web app to request and edit ready-to-post Shorts and Reels.
 
 ## How it works
 
