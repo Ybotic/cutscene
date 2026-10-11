@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.constants import DEFAULT_CLIP_COUNT, MAX_CLIP_COUNT
+
 
 Stage = Literal[
     "queued",
@@ -20,6 +22,7 @@ Stage = Literal[
 
 class GenerateRequest(BaseModel):
     youtube_url: str = Field(min_length=1)
+    clip_count: int = Field(default=DEFAULT_CLIP_COUNT, ge=1, le=MAX_CLIP_COUNT)
     attention_gameplay: Literal["none", "subway_surfer", "minecraft_parkour"] = "none"
     notification_email: str | None = Field(
         default=None,
@@ -65,11 +68,12 @@ class ClipEdit(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    clips: list[ClipEdit] = Field(min_length=3, max_length=3)
+    clips: list[ClipEdit] = Field(min_length=1, max_length=MAX_CLIP_COUNT)
 
 
 class JobStatus(BaseModel):
     job_id: str
+    requested_clip_count: int = DEFAULT_CLIP_COUNT
     status: Stage
     message: str
     clips: list[ClipResult] = Field(default_factory=list)
