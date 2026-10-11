@@ -144,7 +144,7 @@ export default function Home() {
 
   useEffect(() => {
     if (job?.status !== "review" || !job.candidates) return;
-    setSelectedCandidateIds(job.candidates.slice(0, 3).map((candidate) => candidate.id));
+    setSelectedCandidateIds(job.candidates.map((candidate) => candidate.id));
     setCandidateEdits(
       Object.fromEntries(
         job.candidates.map((candidate) => [candidate.id, {
@@ -172,6 +172,7 @@ export default function Home() {
   }, [job]);
 
   const activeStage = useMemo(() => stages.findIndex(([id]) => id === job?.status), [job?.status]);
+  const requestedClipCount = job?.requested_clip_count ?? clipCount;
 
   function unlockCompletionSound() {
     if (typeof window === "undefined" || !window.AudioContext) return;
@@ -210,7 +211,7 @@ export default function Home() {
     setSelectedCandidateIds((selected) =>
       selected.includes(candidateId)
         ? selected.filter((id) => id !== candidateId)
-        : selected.length < 3
+        : selected.length < requestedClipCount
           ? [...selected, candidateId]
           : selected,
     );
@@ -224,7 +225,11 @@ export default function Home() {
   }
 
   async function submitReview() {
-    if (!job || selectedCandidateIds.length !== 3) return;
+    if (
+      !job ||
+      selectedCandidateIds.length === 0 ||
+      selectedCandidateIds.length > requestedClipCount
+    ) return;
     setReviewSubmitting(true);
     setError("");
     try {
@@ -390,10 +395,14 @@ export default function Home() {
             <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
               <div>
                 <p className="font-body text-[10px] uppercase tracking-[0.2em] text-coral">Review before rendering</p>
-                <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em]">Choose three moments.</h2>
-                <p className="mt-2 font-body text-xs leading-5 text-ink/55">Preview each source section, adjust its timing and title, and correct the caption text.</p>
+                <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em]">Choose your moments.</h2>
+                <p className="mt-2 font-body text-xs leading-5 text-ink/55">
+                  {(job.candidates?.length ?? 0) < requestedClipCount
+                    ? `AI found ${job.candidates?.length ?? 0} of ${requestedClipCount} requested clips. You can render the available moments.`
+                    : `Select up to ${requestedClipCount} moments to render.`} Preview each section, adjust timing and titles, and edit captions.
+                </p>
               </div>
-              <span className="font-body text-xs text-ink/45">{selectedCandidateIds.length} / 3 selected</span>
+              <span className="font-body text-xs text-ink/45">{selectedCandidateIds.length} / {job.candidates?.length ?? 0} selected</span>
             </div>
             <TimingDetails timings={job.timings} />
             <div className="grid gap-6 lg:grid-cols-2">
@@ -408,7 +417,7 @@ export default function Home() {
                         <p className="mt-1 font-body text-xs leading-5 text-ink/55">{candidate.reason}</p>
                       </div>
                       <label className="flex shrink-0 items-center gap-2 font-body text-[10px] font-bold uppercase tracking-[0.1em]">
-                        <input type="checkbox" checked={selected} disabled={!selected && selectedCandidateIds.length >= 3} onChange={() => toggleCandidate(candidate.id)} className="h-4 w-4 accent-coral" />
+                        <input type="checkbox" checked={selected} disabled={!selected && selectedCandidateIds.length >= requestedClipCount} onChange={() => toggleCandidate(candidate.id)} className="h-4 w-4 accent-coral" />
                         Use
                       </label>
                     </div>
@@ -436,8 +445,8 @@ export default function Home() {
               })}
             </div>
             <div className="mt-7 flex flex-wrap items-center gap-4">
-              <button type="button" disabled={selectedCandidateIds.length !== 3 || reviewSubmitting} onClick={submitReview} className="bg-ink px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.12em] text-paper transition hover:bg-coral disabled:cursor-not-allowed disabled:opacity-40">
-                {reviewSubmitting ? "Queueing..." : "Render selected clips →"}
+              <button type="button" disabled={selectedCandidateIds.length === 0 || selectedCandidateIds.length > requestedClipCount || reviewSubmitting} onClick={submitReview} className="bg-ink px-5 py-3 font-body text-xs font-bold uppercase tracking-[0.12em] text-paper transition hover:bg-coral disabled:cursor-not-allowed disabled:opacity-40">
+                {reviewSubmitting ? "Queueing..." : `Render ${selectedCandidateIds.length} ${selectedCandidateIds.length === 1 ? "clip" : "clips"} →`}
               </button>
               <button type="button" onClick={cancelJob} className="font-body text-[10px] font-bold uppercase tracking-[0.12em] text-ink/50 hover:text-coral">Cancel job</button>
             </div>
@@ -449,12 +458,12 @@ export default function Home() {
             <div className="mb-8 flex items-end justify-between border-b border-ink/15 pb-5">
               <div>
                 <p className="font-body text-[10px] uppercase tracking-[0.2em] text-coral">Your edit is ready</p>
-                <h2 className="mt-2 font-display text-4xl font-bold tracking-[-0.05em]">Three moments worth posting.</h2>
+                <h2 className="mt-2 font-display text-4xl font-bold tracking-[-0.05em]">{job.clips.length} {job.clips.length === 1 ? "moment" : "moments"} worth posting.</h2>
               </div>
               <span className="hidden font-body text-xs text-ink/45 sm:block">1080 x 1920 / MP4</span>
             </div>
             <TimingDetails timings={job.timings} />
-            <div className="grid gap-8 md:grid-cols-3">
+            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
               {job.clips.map((clip) => (
                 <article key={clip.id} className="group">
                   <div className="clip-player relative overflow-hidden bg-ink shadow-card">
