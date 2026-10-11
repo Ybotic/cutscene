@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,12 @@ class JobStoreTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_persists_job_fields_and_stage_timings(self):
-        self.store.create("job-1", "https://youtu.be/example", "none")
+        self.store.create(
+            "job-1",
+            "https://youtu.be/example",
+            "none",
+            requested_clip_count=5,
+        )
         self.store.update(
             "job-1",
             status="review",
@@ -25,9 +31,62 @@ class JobStoreTests(unittest.TestCase):
 
         job = self.store.get("job-1")
         self.assertEqual(job["status"], "review")
+        self.assertEqual(job["requested_clip_count"], 5)
         self.assertEqual(job["candidates"][0]["id"], 1)
         self.assertEqual(job["timings"]["transcription"], 12.346)
         self.assertEqual(job["progress"], 65)
+
+    def test_clip_count_defaults_to_three_and_rejects_invalid_values(self):
+        self.store.create("job-default", "https://youtu.be/example", "none")
+        self.assertEqual(self.store.get("job-default")["requested_clip_count"], 3)
+
+        for count in (0, 6):
+            with self.subTest(count=count), self.assertRaises(ValueError):
+                self.store.create(
+                    f"job-invalid-{count}",
+                    "https://youtu.be/example",
+                    "none",
+                    requested_clip_count=count,
+                )
+
+    def test_existing_database_migrates_with_default_clip_count(self):
+        database_path = Path(self.temp_dir.name) / "legacy.sqlite3"
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                """
+                CREATE TABLE jobs (
+                    job_id TEXT PRIMARY KEY,
+                    youtube_url TEXT NOT NULL,
+                    attention_gameplay TEXT NOT NULL,
+                    notification_email TEXT,
+                    status TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    clips_json TEXT NOT NULL DEFAULT '[]',
+                    candidates_json TEXT NOT NULL DEFAULT '[]',
+                    selected_json TEXT NOT NULL DEFAULT '[]',
+                    timings_json TEXT NOT NULL DEFAULT '{}',
+                    error TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    cancel_requested INTEGER NOT NULL DEFAULT 0,
+                    attempts INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO jobs (
+                    job_id, youtube_url, attention_gameplay, status, message,
+                    created_at, updated_at
+                ) VALUES ('legacy-job', 'https://youtu.be/example', 'none', 'queued', 'Queued', 1, 1)
+                """
+            )
+
+        migrated_store = JobStore(database_path)
+
+        self.assertEqual(
+            migrated_store.get("legacy-job")["requested_clip_count"], 3
+        )
 
     def test_interrupted_render_is_requeued_after_restart(self):
         self.store.create("job-2", "https://youtu.be/example", "none")

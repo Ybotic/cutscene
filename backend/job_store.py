@@ -10,6 +10,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from backend.constants import DEFAULT_CLIP_COUNT, MAX_CLIP_COUNT
+
 
 class JobStore:
     def __init__(self, database_path: Path):
@@ -24,6 +26,7 @@ class JobStore:
                     job_id TEXT PRIMARY KEY,
                     youtube_url TEXT NOT NULL,
                     attention_gameplay TEXT NOT NULL,
+                    requested_clip_count INTEGER NOT NULL DEFAULT 3,
                     notification_email TEXT,
                     status TEXT NOT NULL,
                     message TEXT NOT NULL,
@@ -44,6 +47,10 @@ class JobStore:
             }
             if "notification_email" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN notification_email TEXT")
+            if "requested_clip_count" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN requested_clip_count INTEGER NOT NULL DEFAULT 3"
+                )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -64,9 +71,12 @@ class JobStore:
         youtube_url: str,
         attention_gameplay: str,
         *,
+        requested_clip_count: int = DEFAULT_CLIP_COUNT,
         max_active: int | None = None,
         notification_email: str | None = None,
     ) -> bool:
+        if not 1 <= requested_clip_count <= MAX_CLIP_COUNT:
+            raise ValueError("Requested clip count must be between 1 and 5.")
         now = time.time()
         with self._lock, self._connect() as connection:
             if max_active is not None:
@@ -79,14 +89,16 @@ class JobStore:
             connection.execute(
                 """
                 INSERT INTO jobs (
-                    job_id, youtube_url, attention_gameplay, notification_email,
+                    job_id, youtube_url, attention_gameplay, requested_clip_count,
+                    notification_email,
                     status, message, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'queued', 'Queued for processing', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'queued', 'Queued for processing', ?, ?)
                 """,
                 (
                     job_id,
                     youtube_url,
                     attention_gameplay,
+                    requested_clip_count,
                     notification_email,
                     now,
                     now,
@@ -317,6 +329,7 @@ class JobStore:
             "job_id": row["job_id"],
             "youtube_url": row["youtube_url"],
             "attention_gameplay": row["attention_gameplay"],
+            "requested_clip_count": row["requested_clip_count"],
             "notification_email": row["notification_email"],
             "status": status,
             "message": row["message"],
