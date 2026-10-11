@@ -1,9 +1,11 @@
 import json
 import logging
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from backend.constants import DEFAULT_CLIP_COUNT, MAX_CLIP_COUNT
 from backend.settings import settings
 from backend.services.video_context import sample_candidate_frames
 
@@ -32,17 +34,27 @@ def _transcript_for_prompt(transcript: dict[str, Any]) -> str:
 
 
 def find_best_clips(
-    transcript: dict[str, Any], source_path: Path | None = None
+    transcript: dict[str, Any],
+    source_path: Path | None = None,
+    clip_count: int = DEFAULT_CLIP_COUNT,
 ) -> list[CandidateClip]:
+    if not 1 <= clip_count <= MAX_CLIP_COUNT:
+        raise ValueError(f"Clip count must be between 1 and {MAX_CLIP_COUNT}.")
+    segments = transcript.get("segments")
+    if not isinstance(segments, list) or not segments:
+        raise ClipDetectionError("The transcript contains no usable speech segments.")
     if not settings.openrouter_api_key:
         raise ClipDetectionError("OPENROUTER_API_KEY is not configured.")
 
+    clip_label = "clip" if clip_count == 1 else "clips"
     try:
         from openai import OpenAI
 
         client = OpenAI(
             api_key=settings.openrouter_api_key,
             base_url="https://openrouter.ai/api/v1",
+            timeout=60,
+            max_retries=1,
             default_headers={
                 "HTTP-Referer": "http://localhost:3000",
                 "X-Title": "AI Clipper",
@@ -58,8 +70,10 @@ def find_best_clips(
                     "role": "system",
                     "content": (
                         "You select high-potential short-form video moments. "
-                        "Return only valid JSON with a clips array. Find exactly 5 "
-                        "non-overlapping candidates when possible. Each should be "
+                        "Return only valid JSON with a clips array. Find up to "
+                        f"{clip_count} non-overlapping candidates when possible. "
+                        "Return fewer rather than inventing or padding weak moments. "
+                        "Each should be "
                         "20 to 60 seconds, include enough setup and payoff, and use "
                         "timestamps from the transcript. Rank score from 0 to 100."
                     ),
@@ -71,6 +85,7 @@ def find_best_clips(
                         "emotion, useful insights, conflict, stories, reactions, "
                         "or satisfying answers. Avoid contextless fragments. You may "
                         "start a few seconds before the key line.\n\n"
+                        f"Return no more than {clip_count} {clip_label}.\n\n"
                         "Required shape: {\"clips\":[{\"start\": number, "
                         "\"end\": number, \"title\": string, \"reason\": string, "
                         "\"score\": number}]}\n\n"
@@ -85,12 +100,35 @@ def find_best_clips(
     except Exception as exc:
         raise ClipDetectionError(f"The AI clip analysis failed: {exc}") from exc
 
-    max_time = max(float(segment["end"]) for segment in transcript["segments"])
+    try:
+        max_time = max(float(segment["end"]) for segment in segments)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ClipDetectionError("The transcript has invalid segment timings.") from exc
+    if not math.isfinite(max_time) or max_time <= 0:
+        raise ClipDetectionError("The transcript has invalid segment timings.")
+    selected = _select_candidates(payload, max_time, clip_count)
+    if source_path is not None:
+        _rerank_visually(client, selected, source_path)
+    return selected
+
+
+def _select_candidates(
+    payload: Any, max_time: float, clip_count: int
+) -> list[CandidateClip]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("clips"), list):
+        raise ClipDetectionError("The AI response did not contain a clips list.")
+
     candidates = []
-    for item in payload.get("clips", []):
+    for item in payload["clips"]:
+        if not isinstance(item, dict):
+            continue
         try:
-            start = max(0.0, float(item["start"]))
-            end = min(max_time, float(item["end"]))
+            raw_start = float(item["start"])
+            raw_end = float(item["end"])
+            if not math.isfinite(raw_start) or not math.isfinite(raw_end):
+                continue
+            start = max(0.0, raw_start)
+            end = min(max_time, raw_end)
             if end <= start or end - start < 10 or end - start > 75:
                 continue
             candidates.append(
@@ -102,7 +140,7 @@ def find_best_clips(
                     score=max(0, min(100, int(item.get("score", 0)))),
                 )
             )
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
             continue
 
     candidates.sort(key=lambda clip: clip.score, reverse=True)
@@ -114,15 +152,13 @@ def find_best_clips(
         ):
             continue
         selected.append(candidate)
-        if len(selected) == 5:
+        if len(selected) == clip_count:
             break
 
-    if len(selected) < 3:
+    if not selected:
         raise ClipDetectionError(
-            "The AI returned fewer than 3 usable moments. Try a video with more spoken content."
+            "The AI could not find a usable clip moment. Try a video with more spoken content."
         )
-    if source_path is not None:
-        _rerank_visually(client, selected, source_path)
     return selected
 
 
