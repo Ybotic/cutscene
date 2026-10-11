@@ -27,6 +27,7 @@ type CandidateEdit = Pick<Candidate, "title" | "start" | "end" | "caption_text">
 
 type Job = {
   job_id: string;
+  requested_clip_count?: number;
   status: string;
   message: string;
   clips: Clip[];
@@ -114,6 +115,7 @@ function TimingDetails({ timings }: { timings?: Record<string, number> }) {
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [clipCount, setClipCount] = useState(3);
   const [attentionGameplay, setAttentionGameplay] = useState("none");
   const [job, setJob] = useState<Job | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -189,6 +191,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           youtube_url: url.trim(),
+          clip_count: clipCount,
           attention_gameplay: attentionGameplay,
           notification_email: emailNotificationsAvailable ? notificationEmail.trim() || null : null,
         }),
@@ -291,6 +294,17 @@ export default function Home() {
               placeholder="Paste a YouTube URL"
               className="mt-4 w-full border-b border-paper/30 bg-transparent py-3 font-body text-sm outline-none placeholder:text-paper/35 focus:border-lime"
             />
+            <label htmlFor="clip-count" className="mt-6 block font-body text-[10px] uppercase tracking-[0.2em] text-paper/55">Number of clips (1–5)</label>
+            <select
+              id="clip-count"
+              value={clipCount}
+              onChange={(event) => setClipCount(Number(event.target.value))}
+              className="mt-3 w-full border-b border-paper/30 bg-ink py-3 font-body text-sm text-paper outline-none focus:border-lime"
+            >
+              {[1, 2, 3, 4, 5].map((count) => (
+                <option key={count} value={count}>{count} {count === 1 ? "clip" : "clips"}</option>
+              ))}
+            </select>
             <label htmlFor="attention-gameplay" className="mt-6 block font-body text-[10px] uppercase tracking-[0.2em] text-paper/55">Attention Gameplay</label>
             <select
               id="attention-gameplay"
@@ -333,7 +347,7 @@ export default function Home() {
               {submitting ? "Starting..." : "Generate clips"}
               <span className="text-lg leading-none">-&gt;</span>
             </button>
-            <p className="mt-4 font-body text-[10px] leading-5 text-paper/40">3 vertical MP4s / word-timed captions / AI selected</p>
+            <p className="mt-4 font-body text-[10px] leading-5 text-paper/40">Up to {clipCount} vertical MP4s / word-timed captions / AI selected</p>
           </form>
         </section>
 
